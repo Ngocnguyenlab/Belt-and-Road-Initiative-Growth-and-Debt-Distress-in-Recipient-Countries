@@ -1,0 +1,2408 @@
+---
+title: "thesis_new"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Data Set and library
+
+```{r call data set, echo=FALSE, include = FALSE}
+library(tidyverse)
+library(caret)
+library(stargazer)
+library(psych)
+library(rio)
+stargazer(episode_summary, type = "html", out = "episode_summary.html")
+```
+
+>describe(thesis_start_year_BRI) -> episode_summary
+> export(episode_summary, "episode_summary.csv")
+
+## Plot Distress events: plot events per year from file group (file including all events)
+
+```{r echo=FALSE}
+readRDS("group") %>% group_by(Year) %>% mutate(total_distress_year = sum(Total_distress)) %>% ggplot(aes(Year, total_distress_year)) + geom_point(pch = 18, size = 3) + geom_line(colour = "blue4", size = 0.8) + xlab("") + ylab("Total Distress Events By Year") + theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                            panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))
+```
+
+## plot events from new file: thesis_data from 1970, only BRI countries
+
+```{r echo=FALSE}
+readRDS("thesis_data") %>% filter(Year>=1970, Country_Code %in% readRDS("BRI")$Country_Code) %>% group_by(Year) %>% mutate(total_distress_year = sum(Total_distress)) %>% ggplot(aes(Year, total_distress_year)) + geom_point() + geom_line() + xlab("") + ylab("Total Distress Events By Year") + theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                            panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))
+```
+
+## compare BRI and non BRI: FIGURE 2
+>thesis_data %>% mutate(BRI = case_when(Country_Code %in% BRI$Country_Code ~ 1, TRUE ~0)) -> thesis_data
+
+```{r echo=FALSE}
+readRDS("thesis_data")%>% filter(Year>=1970) %>% group_by(BRI, Year) %>% mutate(total_distress_year = sum(Total_distress, BRI = as.factor(BRI))) %>% ggplot(aes(Year, total_distress_year, col = factor(BRI))) + geom_point() + geom_line() + xlab("") + ylab("Total Distress Events By Year") + theme_bw()  + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + scale_color_discrete(name = "BRI", labels = c("No", "Yes"), guide = guide_legend(reverse=TRUE))
+```
+
+
+## Table 1: Distress Events, use reg_data_mice only for this
+
+```{r include = FALSE}
+reg_data_mice %>% as.data.frame() %>% filter(Total_distress==1) %>% group_by(Country_Code, episode_count) %>% mutate(Start_Year = Year[episode_id==min(episode_id)], End_Year = Year[episode_id== max(episode_id)]) %>% select(Country_Code, episode_count, Year, Start_Year, End_Year, pc_quota_approval, Arrear_total_pc, Distress_Arrear, Distress_SBA_EFF, Distress_Paris) %>% filter(Year %in% c(Start_Year:End_Year)) %>% mutate(Average_SBAEFF = round(mean(pc_quota_approval), 2), Average_Arrear = round(mean(Arrear_total_pc), 2), Average_Distress_Arrear = round(mean(Distress_Arrear), 2), Average_Distress_SBAEFF = round(mean(Distress_SBA_EFF), 2), Average_Distress_Paris = round(mean(Distress_Paris), 2)) %>% ungroup() %>% select(Country_Code, Start_Year, End_Year, Average_SBAEFF, Average_Arrear, Average_Distress_Arrear, Average_Distress_SBAEFF, Average_Distress_Paris) %>% unique() -> summary_distress_events
+print(summary_distress_events)
+```
+
+## Table 1: Distress Events, using thesis_data_reg of only BRI countries, note that episode_id and episode_group are the same for distress, different for normal (group count 1, 2... each 5 years but id do not, so use episode_group for both but episode_ide for distress only)
+
+>thesis_data_reg %>% as.data.frame() %>% group_by(Country_Code, Total_distress, episode_group) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) -> thesis_data_reg
+
+>
+readRDS("thesis_data_reg") %>% filter(Country_Code %in% readRDS("BRI")$Country_Code) %>% select(Country_Code, episode_group, Total_distress, Year, Start_Year, End_Year, pc_quota_approval, Arrear_total_pc, Distress_Arrear, Distress_SBA_EFF, Distress_Paris) %>% group_by(Country_Code, Total_distress, episode_group) %>%  mutate(Average_SBAEFF = round(mean(pc_quota_approval), 2), Average_Arrear = round(mean(Arrear_total_pc), 2), Average_Distress_Arrear = round(mean(Distress_Arrear), 2), Average_Distress_SBAEFF = round(mean(Distress_SBA_EFF), 2), Average_Distress_Paris = round(mean(Distress_Paris), 2)) %>% ungroup() %>% select(Country_Code, Total_distress, Start_Year, End_Year, Average_SBAEFF, Average_Arrear, Average_Distress_Arrear, Average_Distress_SBAEFF, Average_Distress_Paris) %>% unique() -> summary_distress_events
+print(summary_distress_events)
+> export(summary_distress_events, "summary_distress_events.csv)
+
+## Including Plots for quantiles, from data_main_startyear
+
+>
+library(data.table)
+library(mltools)
+library(ggpubr)
+as.data.table(data_main_startyear) -> reg_data_table
+names(data_main_startyear)
+for (x in c(7:13))
+   { reg_data_table[, Bin1 := bin_data(reg_data_table, binCol = x, bins =seq(.1, .9, .1), binType="quantile")]
+     reg_data_table[, list(mean(Total_distress)), keyby=Bin1] %>% mutate(Bin = seq(.1, .9, .1)) %>% ggplot(aes(Bin, V1)) + geom_point() + geom_smooth(method='lm') +xlab("Average of RHS Variable by Decile") + ylab("Proportion of Episodes Ending in Distress") + theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                            panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))  + stat_regline_equation()-> plot
+     print(plot)}
+
+## TABLE 3 
+
+```{r}
+data = readRDS("to_cor")
+cor(data) -> pw_cor
+stargazer(pw_cor, type = "html", out = "pw_cor.html")
+```
+
+
+##Including Plots for quantiles, from thesis_start_year_BRI : FIGURE 3
+
+```{r}
+library(data.table)
+library(mltools)
+library(ggpubr)
+as.data.table(readRDS("thesis_start_year_BRI")) -> reg_data_table
+names(readRDS("thesis_start_year_BRI"))
+for (x in c(16:18,21:23))
+   { reg_data_table[, Bin1 := bin_data(reg_data_table, binCol = x, bins =seq(.1, .9, .1), binType="quantile")]
+     reg_data_table[, list(mean(Total_distress)), keyby=Bin1] %>% mutate(Bin = seq(.1, .9, .1)) %>% ggplot(aes(Bin, V1)) + geom_point() + geom_smooth(method='lm') +xlab("Average of RHS Variable by Decile") + ylab("Proportion of Episodes Ending in Distress") + labs(caption = names(reg_data_table)[x]) + theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                            panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))  + stat_regline_equation()-> plot
+     print(plot)}
+```
+
+
+## set data now to be new data set: thesis_start_BRI
+
+```{r}
+data = thesis_start_year_BRI
+```
+
+
+## unconditional probability of distress for the whole data set 
+
+total distress / total episodes, now it is 33,84% rather than 20% as in the case of Kraay
+
+```{r}
+sum(data$Total_distress==1)/nrow(data) -> uncond
+uncond
+```
+
+## 2. Regression on the data_main_start_year
+
+ # dont run again
+data = data_main_startyear
+myprobit1 <- glm(Total_distress ~ Debt_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobitmain.html")
+
+## use new data: thesis_start_year_BRI, same as result_BRI.html, stop here, continue at the next session for new data set of thesis
+
+```{r}
+data = thesis_start_year_BRI
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_BRI_all.html")
+```
+
+
+--> take myprobit6 as the key model
+NOTE that debt service plays more important role indicates the more access to commercial loans and less grants, hence higher debt service
+
+## 2.1. Plot debt/export in 2017 and predicted value for 2018 : Figure 4
+We illustrate this in Figure 4, where we graph
+the present value of debt relative to exports in 2001 for all countries, against the predicted
+probability of debt distress using the most recently available data for 1999-2001 and the
+regression in the fifth column of Table 4. We indicate the HIPC threshold of 150 percent
+debt/exports as a vertical line, and the historical unconditional probability of debt distress
+in our sample of 0.23 as a horizontal line. As Figure 4 illustrates, there are many
+countries which may have low debt burdens relative to these benchmarks, but still have
+high probabilities of debt distress owing to either to poor policy performance or recent
+poor growth performance. Similarly, there are some countries that are able to bear
+significantly higher debt burdens without a higher-than-average distress probability
+because of the quality of their policies and the robustness of their economic growth. 
+-->  using a single debt
+threshold for all low income countries to identify countries that are vulnerable to debt
+distress ignores the importance policies and shocks. Country-specific debt thresholds
+reflecting policies and shocks are more appropriate. 
+  #data_main_startyear
+  
+```{r}
+data=data_main_startyear %>% filter(!Year%in% c(2018))
+myprobit2017 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+new_data = reg_data_mice %>% filter(Year %in% c(2018))
+predict(myprobit2017, new_data, type = "response") -> fitted2018
+fitted2018 %>% as.data.frame() %>% setNames("fitted") -> fitted2018
+reg_data_mice %>% filter(Year == 2017, Country_Code %in% new_data$Country_Code) %>% select(Country_Code, Debt_export_pc) -> debt_2017
+cbind(debt_2017, fitted2018) -> debt_2018
+debt_2018 %>% ggplot(aes(Debt_export_pc, fitted, label = Country_Code)) + geom_point() + 
+   geom_text(nudge_x=0.1, cex = 2) + geom_hline(yintercept = 0.35) + geom_vline(xintercept = 150) + xlab("Debt/Export in 2017") + ylab("Predicted of Debt Distress in 2018")
+```
+
+  #thesis data
+  
+```{r}
+data=thesis_start_year_BRI %>% filter(!Year%in% c(2018))
+myprobit2017 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+new_data = thesis_data_BRI %>% filter(Year %in% c(2018))
+predict(myprobit2017, new_data, type = "response") -> fitted2018
+fitted2018 %>% as.data.frame() %>% setNames("fitted") -> fitted2018
+reg_data_mice %>% filter(Year == 2017, Country_Code %in% new_data$Country_Code) %>% select(Country_Code, Debt_export_pc) -> debt_2017
+cbind(debt_2017, fitted2018) -> debt_2018
+debt_2018 %>% ggplot(aes(Debt_export_pc, fitted, label = Country_Code)) + geom_point() + 
+   geom_text(nudge_x=0.1, cex = 2) + geom_hline(yintercept = 0.35) + geom_vline(xintercept = 150) + xlab("Debt/Export in 2017") + ylab("Predicted of Debt Distress in 2018")
+```
+  
+
+## 2.2. Plot Figure 5, use myprobit 6
+
+- Rewrite the model as equation 
+pnorm(coef6[1] + coef6[2]*x + coef6[3]*y + coef6[4]*mean(reg_data_mice$Real_GDP_growth)) == probability of distress (total distress)
+- Case probability = natural one (uncond) and = 0.1
+```{r}
+coef(myprobit6) -> coef6
+FUN1 = function (y){x = (qnorm(0.35)-coef6[1]-coef6[3]*y - coef6[4]*mean(reg_data_mice$Real_GDP_growth))/coef6[2]
+print(x)}
+sapply(data_main_startyear$ROL, FUN1) -> debt1
+debt1 %>% as.data.frame() %>% setNames("debt1") -> debt1 
+FUN2 = function (y){x = (qnorm(0.10)-coef6[1]-coef6[3]*y - coef6[4]*mean(reg_data_mice$Real_GDP_growth))/coef6[2]
+print(x)}
+sapply(data_main_startyear$ROL, FUN2) -> debt2
+debt2 %>% as.data.frame() %>% setNames("debt2") -> debt2
+cbind(data_main_startyear$ROL, debt1, debt2) %>% setNames(c("ROL", "debt1", "debt2")) -> to_plot 
+color <- c("P[Distress]=0.35"="blue", "P[Distress]=0.10"="red" )
+to_plot %>% ggplot(aes(x=ROL)) + geom_line(aes(y=debt1, color = "P[Distress]=0.35"), size = 1.2) + geom_line(aes(y = debt2,  color = "P[Distress]=0.10"), size= 1.2) + geom_point(aes(y= debt1, color = "P[Distress]=0.35"), pch = 1) + geom_point(aes(y=debt2, color = "P[Distress]=0.10"), pch = 2) + scale_x_discrete(limits = (0:1.5), expand = c(0,0))+ labs(x = "ROL index",
+         y = "Debt Service/export",
+         color = "Legend") + theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                            panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + scale_y_continuous(expand = c(0,0))
+```
+
+- from *kraay*: Consider first the line
+corresponding to a distress probability of 25 percent, which is equal to the historical
+unconditional average rate of debt distress in our sample. It tells us that a country with
+average growth, and poor policy (corresponding to a CPIA score of 3 which is roughly
+the first quartile of our sample), would be able to tolerate a present value of debt to
+exports of less than 100 percent. In contrast, a country with good policy (corresponding
+to a CPIA score of 4.2 which is the fourth quartile of our sample), would be able to
+tolerate a debt level nearly three times higher with the same distress probability. Of
+course, for lower (higher) debt distress probabilities, these lines shift down (up),
+corresponding to lower (higher) levels of debt for any level of policy
+- Thus, these figures can only give us a sense of the
+rough order of magnitude of effects of policies and shocks on the level of debt consistent
+with a given distress probability. 
+
+
+## 3. Regression for 50/50
+
+ - create test set and train set from the main data with ratio 80 for train and 20 for test
+
+```{r}
+library(caret)
+set.seed(2007)
+   test_index <- createDataPartition(data$Total_distress, times = 1, p = 0.5, list = FALSE)
+   test_set <- data[test_index, ]
+   train_set <- data[-test_index, ]
+```
+
+ - run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ Debt_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  CPIA, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ Debt_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("Debt/Exports","Total Debt Services/ Exports",
+"CPIA Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit50.html")
+```
+ 
+## check on test set 
+
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test of test set 20%
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> divide test and train by 50/50 give low accuracy
+
+
+##4. Regression for test set cut by year (kraay set and new set) --> to report out of sample prediction power with table4
+
+-  try to remove crisis years: 1970-2002, 2003-2018
+
+```{r}
+train_set = data_main_startyear %>% filter(Year %in% c(1970:2002)) %>% ungroup()
+test_set = data_main_startyear %>% filter(Year %in% c(2003:2018))%>% ungroup()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ Debt_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit2002.html")
+```
+ 
+## check on test set 
+
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+- by year shows better results and very high rate for policy
+- multivariate shows better than univariate, use all yields the highest accuracy and true positive
+- look at cm5 and cm6, removing debt service doesnt cause any change
+- Note that use old data with mean instead of the value at the beginning of episode yields higher accuracy
+
+## 4. Robust Check
+
+## replace shock by TOT growth and real depreciation: Table 6
+
+```{r}
+data= data_main_startyear
+myprobit1 <- glm(Total_distress ~ Debt_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_depreciation, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Debt_export_pc + ROL + TOT_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_depreciation, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + TOT_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobittable6.html")
+```
+
+- CPIA does not seem to be significant 
+
+## Table 7: check on group of income
+
+- devide data by group of income
+
+```{r}
+high_income = reg_data_mice %>% ungroup() %>% filter(GDP_percap_ppp > median(na.omit(GDP_percap_ppp))) %>% as.data.frame() %>% group_by(Country_Code, episode_count) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) %>%filter(Year == Start_Year) %>% select(Country_Code, episode_count,Year, Start_Year, End_Year, Total_distress, Debt_export_pc, Debt_service_export_pc, Real_GDP_growth, ROL, TOT_growth, Real_depreciation, CPIA, GDP_percap_ppp) %>% unique() %>% ungroup()
+low_income = reg_data_mice %>% ungroup() %>% filter(GDP_percap_ppp < median(na.omit(GDP_percap_ppp))) %>% as.data.frame() %>% group_by(Country_Code, episode_count) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) %>%filter(Year == Start_Year) %>% select(Country_Code, episode_count,Year, Start_Year, End_Year, Total_distress, Debt_export_pc, Debt_service_export_pc, Real_GDP_growth, ROL, TOT_growth, Real_depreciation, CPIA, GDP_percap_ppp) %>% unique() %>% ungroup()
+```
+
+- run regression on the whole data 
+
+```{r}
+data= data_main_startyear
+data_low = low_income
+data_high = high_income
+myprobit1 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit4 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit5 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+myprobit6 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobittable7.html")
+```
+
+- check with CPIA 
+
+```{r}
+data= data_main_startyear
+data_low = low_income
+data_high = high_income
+myprobit1 <- glm(Total_distress ~ Debt_export_pc + CPIA + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + CPIA + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  Debt_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit4 <- glm(Total_distress ~  Debt_service_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit5 <- glm(Total_distress ~  Debt_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+myprobit6 <- glm(Total_distress ~  Debt_service_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobittable7_CPIA.html")
+```
+
+- it does not really reflect the conclusion ofo Kraay, so simply take it for granted from Kraay.
+
+- check on marginal effect 
+
+```{r}
+library(mfx)
+data= data_main_startyear
+data_low = low_income
+data_high = high_income
+myprobit1 <- probitmfx(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp),   data = data)
+myprobit1
+myprobit2 <- probitmfx(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp),   data = data)
+myprobit2
+myprobit3 <- probitmfx(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth,   data = data_low)
+myprobit3
+myprobit4 <- probitmfx(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth,   data = data_low)
+myprobit4
+myprobit5 <- probitmfx(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth,   data = data_high)
+myprobit5
+myprobit6 <- probitmfx(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth,   data = data_high)
+myprobit6
+myprobit7 <- probitmfx(Total_distress ~  Debt_service_export_pc + CPIA,   data = data_low)
+myprobit7
+```
+
+- it seems like for high income group, the financial factor is more important while for low income, policy and shocks are more important
+
+## check on individual factor 
+
+```{r}
+data = data_main_startyear
+ glm(Total_distress ~ Country_Code + Debt_export_pc + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data) %>% summary()
+```
+
+- it confirms the fact that our results do not depend much on the difference between countries or rich-poor level 
+- *kraay*:  our failure to find strong evidence of statistically significant
+differential effects in richer and poorer developing countries, may simply reflect our
+much smaller sample size in the two subgroups. Overall, however, these results suggest
+to us that our main findings are not driven exclusively by richer or poorer developing
+countries, nor simply by differences between these two groups of countries. Rather, our
+results suggest that debt burdens, policies and shocks matter for debt distress both in lowincome and middle-income developing countries. 
+
+## further robust check
+- simply take it 
+- note the conclusion: Taken together, these results suggest that unobserved timeinvariant country characteristics are not responsible for our main results, and that the
+observed persistence of debt distress over time is mostly due to the persistence of debt
+burdens, policies, and shocks rather than a recent history of distress itself.
+
+------------------------
+
+##II. Now turn to data for all countries
+
+##1. Debt data 
+
+- *** NOT RUN THIS import and clean data 
+
+Debt_all[-c(2566:2570), -c(53:60)] -> Debt_all
+Debt_all %>% setNames(c("Indicator", "Country_Name", "Country_Code", 1970:2018)) -> Debt_all
+Debt_all %>% gather(Year, Value, '1970':'2018' ) %>% spread(Indicator, Value) %>% view()
+Debt_all %>% gather(Year, Value, '1970':'2018' ) %>% spread(Indicator, Value) %>% setNames(c("Country_Name", "Country_Code", "Year", "GE", "Concessional_pc", "Debt_service_PPG", "Debt_service_total", "Debt_export_pc", "Debt_GNI_pc", "Concessional", "Debt_PPG", "Debt_total", "PPG_bilateral", "PPG_bilateral_concessional", "PPG_bonds", "PPG_multilateral", "PPG_multilateral_concessional", "PPG_official", "PPG_private_other", "PPG_private", "PV_debt", "Debt_service_export_pc")) -> Debt_all
+for (i in 3:ncol(Debt_all))
+{
+  Debt_all[[i]] <- as.numeric(Debt_all[[i]])
+  Debt_all
+}
+stargazer(as.data.frame(Debt_all), type = "html", out= "Debt_all.html")
+saveRDS(Debt_all, "Debt_all")
+
+
+- *** NOT RUN THIS calculate PV debt by the formular: PV(t) = dod(0)*(1- GE)
+
+```{r}
+readRDS("Debt_all") %>% mutate(GE = GE/100, Concessional_pc = Concessional_pc/100, Debt_export_pc = Debt_export_pc/100, Debt_GNI_pc = Debt_GNI_pc/100, Debt_service_export_pc = Debt_service_export_pc/100) -> Debt_all
+Debt_all %>% as.data.frame() %>% group_by(Country_Code) %>% mutate(PV_debt_estimate = lag(Debt_total)*(1-GE)) -> Debt_all
+Debt_all$PV_debt_estimate[is.na(Debt_all$PV_debt_estimate)] <- 0
+colour = c("Nominal Total Debt" = "blue", "PV of Debt" = "red")
+Debt_all %>% ungroup() %>% group_by(Year) %>% mutate(Debt_total = sum(Debt_total), PV_debt_estimate = sum(PV_debt_estimate)) %>% as.data.frame() -> to_plot
+to_plot %>% ggplot(aes(x=Year)) + geom_line(aes(y=Debt_total, color = "Nominal Total Debt"), size = 1.2) + geom_line(aes(y = PV_debt_estimate,  color = "PV of Debt"), size= 1.2) + geom_point(aes(y= Debt_total, color = "Nominal Total Debt"), pch = 15, size = 3) + geom_point(aes(y=PV_debt_estimate, color = "PV of Debt"), pch = 17, size = 3) + scale_x_continuous( expand = c(0,0))+  theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+                            panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + scale_y_continuous(expand = c(0,0)) + labs(x = "",
+         y = "Current US Dollars",
+         color = "Legend") + theme(legend.title = element_blank())
+```
+
+
+
+- plot shows similar results with the study of Yuri Dikhanov on PV of debt 
+
+------------------------
+
+## BRI data: thesis_data
+
+- NOT RUN
+
+>
+thesis_data %>% ungroup() %>% mutate(Distress_Arrear = case_when(Arrear_total_pc >0.05 ~1, TRUE ~0), Distress_SBA_EFF = case_when(pc_quota_approval> 50~1, TRUE~0), Distress_Paris = case_when(!is.na(Paris) ~3, TRUE~0)) -> thesis_data
+thesis_data %>% mutate(Total_distress = case_when(Distress_Paris != 0 ~ 3, Distress_Paris == 0 & Distress_Arrear + Distress_SBA_EFF != 0 ~1, TRUE~0)) -> thesis_data
+thesis_data %>% as.data.frame() %>% group_by(Country_Code) %>% arrange(Country_Code, Year) -> thesis_data
+for (x in 1:(nrow(thesis_data)-2)) {
+        y = x +1  
+        thesis_data$Total_distress[y] <-  ifelse(thesis_data$Total_distress[x] == 3, 1, thesis_data$Total_distress[y])
+        z = x +2  
+        thesis_data$Total_distress[z] <-  ifelse(thesis_data$Total_distress[x] == 3, 1, thesis_data$Total_distress[z])
+     } # add 2 years following paris as distress
+thesis_data$Total_distress[thesis_data$Total_distress == 3] <- 1 # change all to 0 and 1 
+thesis_data %>% group_by(Country_Code, Total_distress) %>% arrange(Country_Code, Year) %>%
+    mutate(episode_id = cumsum(c(0,diff(Year)!=1))) -> thesis_data # add episode id
+thesis_data %>%group_by(Country_Code, Total_distress, episode_id) %>% mutate(episode_id_count = row_number(Country_Code)) -> thesis_data # add episode id count
+thesis_data %>% group_by(Country_Code, Total_distress, episode_id) %>% add_count(Country_Code, Total_distress, episode_id) -> thesis_data # add count of episode id to divide into episodes of distress and normal
+thesis_data %>% mutate(Consecutive_Years_Count = n) -> thesis_data
+thesis_data %>% filter(Total_distress == 0 ) %>% select(Country_Code, Year, episode_id, episode_id_count, Consecutive_Years_Count) -> normal_tomerge
+normal_tomerge %>% group_by(Country_Code, episode_id) %>% mutate(episode_normal_count = case_when(episode_id_count<=5~1, episode_id_count<=10~2, episode_id_count<=15~3, episode_id_count<=20 ~4, episode_id_count<= 25~5, episode_id_count<=30~6, episode_id_count<=35~7, episode_id_count<=40~8, episode_id_count<=45~9 )) -> normal_tomerge
+normal_tomerge %>% add_count(Country_Code, episode_id, episode_normal_count) -> normal_tomerge
+normal_tomerge %>% rename('Year_Count' = 'n') -> normal_tomerge
+left_join(thesis_data, normal_tomerge) -> thesis_data
+thesis_data$Year_Count[thesis_data$Total_distress == 1] <- thesis_data$Consecutive_Years_Count[thesis_data$Total_distress == 1] # add year count for distress episode 
+thesis_data$episode_normal_count[thesis_data$Total_distress == 1] <- thesis_data$episode_id[thesis_data$Total_distress == 1] # add episode group for distress episode 
+thesis_data %>% mutate(episode_group = episode_normal_count, Year_per_episode= Year_Count) -> thesis_data
+saveRDS(thesis_data, "thesis_data")
+```
+
+>arrear_all <- readRDS("arrear_all")
+arrear_all %>% select(Country_Name, Country_Code, Year, Arrear_total_pc) -> thesis_data
+full_join(thesis_data, pariswithcode) -> thesis_data
+full_join(thesis_data, SBA_EFF) -> thesis_data
+thesis_data %>% mutate(Distress_Arrear = case_when(Arrear_total_pc >0.05 ~1, TRUE ~0), Distress_SBA_EFF = case_when(pc_quota_approval> 0.5~1, TRUE~0), Distress_Paris = case_when(!is.na(Paris) ~3, TRUE~0)) -> thesis_data
+thesis_data %>% mutate(Total_distress = case_when(Distress_Paris != 0 ~ 3, Distress_Paris == 0 & Distress_Arrear + Distress_SBA_EFF != 0 ~1, TRUE~0)) -> thesis_data
+thesis_data %>% as.data.frame() %>% group_by(Country_Code) %>% arrange(Country_Code, Year) -> thesis_data
+for (x in 1:(nrow(thesis_data)-2)) {
+        y = x +1  
+        thesis_data$Total_distress[y] <-  ifelse(thesis_data$Total_distress[x] == 3, 1, thesis_data$Total_distress[y])
+        z = x +2  
+        thesis_data$Total_distress[z] <-  ifelse(thesis_data$Total_distress[x] == 3, 1, thesis_data$Total_distress[z])
+     } # add 2 years following paris as distress
+thesis_data$Total_distress[thesis_data$Total_distress == 3] <- 1 # change all to 0 and 1 
+thesis_data %>% group_by(Country_Code, Total_distress) %>% arrange(Country_Code, Year) %>%
+    mutate(episode_id = cumsum(c(0,diff(Year)!=1))) -> thesis_data # add episode id
+thesis_data %>%group_by(Country_Code, Total_distress, episode_id) %>% mutate(episode_id_count = row_number(Country_Code)) -> thesis_data # add episode id count
+thesis_data %>% group_by(Country_Code, Total_distress, episode_id) %>% add_count(Country_Code, Total_distress, episode_id) -> thesis_data # add count of episode id to divide into episodes of distress and normal
+thesis_data %>% rename('Consecutive_Years_Count' = 'n') -> thesis_data
+thesis_data %>% filter(Total_distress == 0 ) %>% select(Country_Code, Year, episode_id, episode_id_count, Consecutive_Years_Count) -> normal_tomerge
+normal_tomerge %>% group_by(Country_Code, episode_id) %>% mutate(episode_normal_count = case_when(episode_id_count<=5~1, episode_id_count<=10~2, episode_id_count<=15~3, episode_id_count<=20 ~4, episode_id_count<= 25~5, episode_id_count<=30~6, episode_id_count<=35~7, episode_id_count<=40~8, episode_id_count<=45~9 )) -> normal_tomerge
+normal_tomerge %>% add_count(Country_Code, episode_id, episode_normal_count) -> normal_tomerge
+normal_tomerge %>% rename('Year_Count' = 'n') -> normal_tomerge
+left_join(thesis_data, normal_tomerge) -> thesis_data
+thesis_data$Year_Count[thesis_data$Total_distress == 1] <- thesis_data$Consecutive_Years_Count[thesis_data$Total_distress == 1] # add year count for distress episode 
+thesis_data$episode_normal_count[thesis_data$Total_distress == 1] <- thesis_data$episode_id[thesis_data$Total_distress == 1] # add episode group for distress episode 
+thesis_data %>% rename('episode_group' = 'episode_normal_count', 'Year_per_episode'= 'Year_Count') -> thesis_data
+saveRDS(thesis_data, "thesis_data")
+
+
+- change the code in SBAEFF
+> SBAEFF$Country_Code[SBAEFF$Member =="Armenia, Republic of"  ] <- "ARM"
+> SBAEFF$Country_Code[SBAEFF$Member =="Belarus, Republic of"   ] <- "BLR"
+> SBAEFF$Country_Code[SBAEFF$Member =="Croatia, Republic of"  ] <- "HRV"
+> SBAEFF$Country_Code[SBAEFF$Member =="Estonia, Republic of"   ] <- "EST"
+> SBAEFF$Country_Code[SBAEFF$Member =="Gambia, The"   ] <- "GMB"
+> SBAEFF$Country_Code[SBAEFF$Member =="Iran, Islamic Republic of" ] <- "IRN"
+> SBAEFF$Country_Code[SBAEFF$Member =="Kazakhstan, Republic of"] <- "KAZ"
+> SBAEFF$Country_Code[SBAEFF$Member == "Lao People's Democratic Republic"] <- "LAO"
+> SBAEFF$Country_Code[SBAEFF$Member == "Latvia, Republic of"] <- "LVA"
+> SBAEFF$Country_Code[SBAEFF$Member == "Lithuania, Republic of"  ] <- "LTU"
+> SBAEFF$Country_Code[SBAEFF$Member == "Moldova, Republic of"  ] <- "MDA"
+> SBAEFF$Country_Code[SBAEFF$Member == "Netherlands, The"  ] <- "NLD"
+> SBAEFF$Country_Code[SBAEFF$Member == "North Macedonia, Republic of" ] <- "MKD"
+> SBAEFF$Country_Code[SBAEFF$Member == "Poland, Republic of" ] <- "POL"
+> SBAEFF$Country_Code[SBAEFF$Member == "Russian Federation" ] <- "RUS"
+> SBAEFF$Country_Code[SBAEFF$Member == "Serbia, Republic of" ] <- "SER"
+> SBAEFF$Country_Code[SBAEFF$Member == "Syrian Arab Republic" ] <- "SYR"
+> SBAEFF$Country_Code[SBAEFF$Member == "Tajikistan, Republic of" ] <- "TJK"
+> SBAEFF$Country_Code[SBAEFF$Member == "Uzbekistan, Republic of" ] <- "UZB"
+> SBAEFF$Country_Code[SBAEFF$Member == "Yemen, Republic of"  ] <- "YEM"
+
+- add PV debt 
+> left_join(thesis_data, Debt_all %>% select(Country_Code, Year, PV_debt_export)) -> thesis_data
+> left_join(thesis_data, growth_withcode) -> thesis_data #  add real gdp growth rate 
+
+
+- add code 
+> growth_withcode$Country_Code[growth_withcode$Country_Name==  "Micronesia, Fed. States of"] <- "FSM"
+> growth_withcode$Country_Code[growth_withcode$Country_Name== "Congo, Dem. Rep."] <- "ZAR"
+> growth_withcode$Country_Code[growth_withcode$Country_Name== "Congo, Rep."] <- "COG"
+> growth_withcode$Country_Code[growth_withcode$Country_Name== "Cote d'Ivoire"] <- "CIV"
+> growth_withcode$Country_Code[growth_withcode$Country_Name== "Egypt, Arab Rep."] <- "EGY"
+> growth_withcode$Country_Code[growth_withcode$Country_Name== "Gambia, The"] <- "GMB"
+> growth_withcode$Country_Code[growth_withcode$Country_Name== "Korea, Republic of"] <- "KOR"
+> growth_withcode$Country_Code[growth_withcode$Country_Name==  "Micronesia, Fed. States of"] <- "FSM"
+> growth_withcode$Country_Code[growth_withcode$Country_Name==   "North Macedonia"   ] <- "MKD"
+> growth_withcode$Country_Code[growth_withcode$Country_Name==   "Nauru"   ] <- "NAU"
+> growth_withcode$Country_Code[growth_withcode$Country_Name==  "Russian Federation" ] <- "RUS"
+> growth_withcode$Country_Code[growth_withcode$Country_Name==  "Somalia" ] <- "SOM"
+> growth_withcode$Country_Code[growth_withcode$Country_Name==   "South Sudan, Republic of" ] <- "SSD"
+
+- take out the start year data 
+
+
+thesis_data %>% filter(Year>=1970) %>% filter(ifelse(Total_distress==1, Year_per_episode>=3, Year_per_episode==5)) -> thesis_data_reg # filter episode of 5 years normal and at least 3 years in distress from 1970
+thesis_data_reg %>% as.data.frame() %>% group_by(Country_Code, Total_distress, episode_group) %>%filter(Year == Start_Year, BRI == 1) -> thesis_start_year_BRI # this file for regression
+
+- add more variables from Debt_all data, note that all % hav been divided by 100 already
+
+>left_join(thesis_start_year, Debt_all %>% select(Country_Code, Year, Debt_service_export_pc, Debt_export_pc, Debt_GNI_pc)) -> thesis_start_year
+> left_join(thesis_data, Debt_all %>% select(Country_Code, Year, Debt_service_export_pc, Debt_export_pc, Debt_GNI_pc)) -> thesis_data
+> left_join(thesis_data_reg, Debt_all %>% select(Country_Code, Year, Debt_service_export_pc, Debt_export_pc, Debt_GNI_pc)) -> thesis_data_reg
+>left_join(thesis_start_year, Country_info %>% select(Country_Code, Region, Income_Group)) -> thesis_start_year
+> left_join(thesis_data, Country_info %>% select(Country_Code, Region, Income_Group)) -> thesis_data
+> left_join(thesis_data_reg, Country_info %>% select(Country_Code, Region, Income_Group)) -> thesis_data_reg
+
+- divide some rates by 100 
+> thesis_data %>% mutate(pc_quota_approval = pc_quota_approval/100, Real_GDP_growth = Real_GDP_growth/100) -> thesis_data
+> thesis_data_reg %>% mutate(pc_quota_approval = pc_quota_approval/100, Real_GDP_growth = Real_GDP_growth/100) -> thesis_data_reg
+> thesis_start_year %>% mutate(pc_quota_approval = pc_quota_approval/100, Real_GDP_growth = Real_GDP_growth/100) -> thesis_start_year
+
+- save files 
+
+
+saveRDS(thesis_data_reg, "thesis_data_reg") 
+saveRDS(thesis_start_year, "thesis_start_year")
+saveRDS(thesis_data, "thesis_data") # whole file of all data 
+
+## regression with whole data: thesis_start_year
+- count episodes of distress
+```{r}
+thesis_start_year %>% filter(Total_distress == 1) %>% nrow()
+```
+
+- count normal 
+
+```{r}
+thesis_start_year %>% filter(Total_distress == 0) %>% nrow()
+```
+- unconditional probability of distress for the whole sample is smaller than for BRI groups (34%)
+
+```{r}
+193/(193+420) -> uncond
+uncond
+```
+
+## run regression 
+
+- run on the whole data set 
+```{r}
+data = thesis_start_year
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_whole.html")
+```
+
+## rsq, probit 8 (without ROL) is highest, and probit5 (all 4 variables) are 2nd, it seems like ROL is not so significant when using PV debt, but ROl is particularly significant when using face value of debt 
+
+```{r}
+library(pscl)
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+
+## test with face value of debt, ROL is more significant, but NOTE real GDP growth is not significant any longer whenever there is ROL index 
+
+```{r}
+data = thesis_start_year
+myprobit1 <- glm(Total_distress ~ Debt_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_whole_face_value_debt.html")
+```
+
+## rsq, still, probit5 and 8 are highest, probit 7 (using ROL instead of services) also high, and the one without ROL still highest, though the gap is neglegible
+
+```{r}
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+
+--> it seems not really like kraay regarding ROL and real GDP growth, so we check the data set till 2002, which was the dataset that Kraay used, we see that indeed the best model was the one with all 4 variables (probit5), followed by the one with ROL without service (probit6), which is quite different from the current situation 
+
+## check data 1970-2002
+
+```{r}
+data = thesis_start_year %>% filter(Year<= 2002)
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_whole_2002.html")
+```
+
+##rsq
+
+```{r}
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+
+## check data 2002-2020, we see that rsq is much lower, but probit 5 with all 4 variables still highest, followed by probit 7 with pv debt and ROL
+
+```{r}
+data = thesis_start_year %>% filter(Year> 2002)
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_whole_2002_2020.html")
+```
+
+##rsq
+
+```{r}
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+
+## check on facevalue generating similar results
+```{r}
+data = thesis_start_year %>% filter(Year> 2002)
+myprobit1 <- glm(Total_distress ~ Debt_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ Debt_export_pc + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_whole_face_value_debt_2002_2020.html")
+```
+
+##rsq
+
+```{r}
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+
+## 3. train and test
+
+ - create test set and train set from the main data with ratio 80 for train and 20 for test
+```{r}
+data = thesis_start_year
+```
+
+
+```{r}
+library(caret)
+set.seed(2007)
+   test_index <- createDataPartition(data$Total_distress, times = 1, p = 0.2, list = FALSE)
+   test_set <- data[test_index, ]
+   train_set <- data[-test_index, ]
+```
+
+ - run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_train80.html")
+```
+ 
+#check on test set 
+
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test of test set 20%
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> divide test and train by 80/20, best accuracy rate is probit 8 (without ROL)
+
+
+##4. Regression for test set cut by year (kraay set and new set) --> to report out of sample prediction power with table4
+
+-  try to remove crisis years: 1970-2002, 2003-2018
+
+```{r}
+train_set = thesis_start_year %>% filter(Year %in% c(1970:2002)) %>% ungroup()
+test_set = thesis_start_year %>% filter(Year %in% c(2003:2018))%>% ungroup()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_train_2002.html")
+```
+ 
+## check on test set 
+
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+- by year shows lower accuracy, higher false alarm, higher sensitivity
+- multivariate shows better than univariate, use all yields the highest accuracy and true positive
+- look at cm5 and cm6, removing debt service doesnt cause any change
+- Note that use old data with mean instead of the value at the beginning of episode yields higher accuracy
+
+## try regression by leaving high income group 
+
+-  try to remove crisis years: 1970-2002, 2003-2018
+
+```{r}
+train_set = thesis_start_year %>% filter(Year %in% c(1970:2002), Income_Group!= "High income") %>% ungroup()
+test_set = thesis_start_year %>% filter(Year %in% c(2003:2018), Income_Group!= "High income")%>% ungroup()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_train_income.html")
+```
+ 
+## check on test set 
+
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> leave out high income group increases accuracy but not significantly
+
+## try regression for each income group 
+-  try to remove crisis years: 1970-2002, 2003-2018
+
+```{r}
+train_set = thesis_start_year %>% filter(Year %in% c(1970:2002), Income_Group== "Upper middle income") %>% ungroup()
+test_set = thesis_start_year %>% filter(Year %in% c(2003:2018), Income_Group== "Upper middle income")%>% ungroup()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_train_UMI.html")
+```
+ 
+## check on test set 
+
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> all values are much better if done for each group, the one with highest overall accuracy is probit 5 (all 4 variables)
+
+##consider adding income group, region, BRI, and years per episode
+
+```{r}
+data = thesis_start_year 
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Income_Group, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended.html")
+```
+
+## rsq
+
+```{r}
+library(pscl)
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+--> when we include real GDP growth, the income group becomes insignificant 
+- region variable seems very significant 
+- BRI countries having higher probability of debt distress 
+- very high rsq, highest is probit8 (witl all vaiables except ROL)
+## train and test 
+-  try to remove crisis years: 1970-2002, 2003-2018
+
+```{r}
+train_set = thesis_start_year %>% filter(Year %in% c(1970:2002)) %>% ungroup()
+test_set = thesis_start_year %>% filter(Year %in% c(2003:2018))%>% ungroup()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Income_Group, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Income_Group, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended_train_2002.html")
+```
+ 
+## check on test set 
+
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> not perform as well as done for each group as above
+##consider adding years per episode
+
+```{r}
+data = thesis_start_year 
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended_ype.html")
+```
+
+## rsq
+
+```{r}
+library(pscl)
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+--> adding years per episode gives higher rsq and also significant 
+
+## add ype and check test and train 
+
+-  divide years: 1970-2002, 2003-2018
+
+```{r}
+train_set = thesis_start_year %>% filter(Year %in% c(1970:2002)) %>% ungroup()
+test_set = thesis_start_year %>% filter(Year %in% c(2003:2018))%>% ungroup()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Income_Group+ Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended_train_ype_2002.html")
+```
+ 
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> even lower than not included, the best model is the one done for each group of income separately
+
+## include all and for each group 
+
+```{r}
+data = thesis_start_year %>% filter(Income_Group == "Upper middle income")
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended_all_UMI.html")
+```
+
+###rsq
+
+```{r}
+library(pscl)
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+
+--> probit 5 has particularly high rsq
+## test and train 
+-  divide years: 1970-2002, 2003-2018 and choose UMI
+
+```{r}
+train_set = thesis_start_year %>% filter(Year %in% c(1970:2002), Income_Group == "Upper middle income") %>% ungroup() %>% unique()
+test_set = thesis_start_year %>% filter(Year %in% c(2003:2018), Income_Group == "Upper middle income")%>% ungroup() %>% unique()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended_train_ype_2002.html")
+```
+ 
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> model of all vaiables and for each group yields highest accuracy (probit5)
+
+## LMI 
+## include all and for each group 
+
+```{r}
+data = thesis_start_year %>% filter(Income_Group == "Lower middle income")
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended_all_LMI.html")
+```
+
+###rsq
+
+```{r}
+library(pscl)
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 )
+```
+
+## test and train 
+-  divide years: 1970-2002, 2003-2018 and choose UMI
+
+```{r}
+train_set = thesis_start_year %>% filter(Year %in% c(1970:2002), Income_Group == "Lower middle income") %>% ungroup() %>% unique()
+test_set = thesis_start_year %>% filter(Year %in% c(2003:2018), Income_Group == "Lower middle income")%>% ungroup() %>% unique()
+```
+
+- run regression on train set 
+ 
+```{r}
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region + BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth + Region +BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth+ Region+ BRI + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + BRI+  Real_GDP_growth + Region + Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_whole_extended_train_ype_LMI_2002.html")
+```
+ 
+- unconditional for train set 
+ 
+```{r}
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+```
+
+ - now we calculated fitted value from the regression on the test set (new data)
+ 
+```{r}
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+```
+ 
+ - set value for fitted
+ 
+```{r}
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+
+```
+ 
+- create confusion matrix, calculate false positive, neg, sensitivity, ..., NOTE that for cm need factor variables
+
+```{r}
+library(caret)
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+```
+
+ - create dataframe of true positive and false positive for the test set
+ 
+```{r}
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) )
+```
+
+--> clearly divided by income group yields higher accuracy 
+
+
+## Table 7: check on group of income --> use group of income instead of this part 
+
+- devide data by group of income
+
+```{r}
+high_income = reg_data_mice %>% ungroup() %>% filter(GDP_percap_ppp > median(na.omit(GDP_percap_ppp))) %>% as.data.frame() %>% group_by(Country_Code, episode_count) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) %>%filter(Year == Start_Year) %>% select(Country_Code, episode_count,Year, Start_Year, End_Year, Total_distress, Debt_export_pc, Debt_service_export_pc, Real_GDP_growth, ROL, TOT_growth, Real_depreciation, CPIA, GDP_percap_ppp) %>% unique() %>% ungroup()
+low_income = reg_data_mice %>% ungroup() %>% filter(GDP_percap_ppp < median(na.omit(GDP_percap_ppp))) %>% as.data.frame() %>% group_by(Country_Code, episode_count) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) %>%filter(Year == Start_Year) %>% select(Country_Code, episode_count,Year, Start_Year, End_Year, Total_distress, Debt_export_pc, Debt_service_export_pc, Real_GDP_growth, ROL, TOT_growth, Real_depreciation, CPIA, GDP_percap_ppp) %>% unique() %>% ungroup()
+```
+
+- run regression on the whole data 
+
+```{r}
+data= data_main_startyear
+data_low = low_income
+data_high = high_income
+myprobit1 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit4 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit5 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+myprobit6 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobittable7.html")
+```
+
+## 4. Robust Check
+
+## replace shock by TOT growth and real depreciation: Table 6: SKIP
+
+```{r}
+data= data_main_startyear
+myprobit1 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_depreciation, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Debt_export_pc + ROL + TOT_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_depreciation, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + TOT_growth, family = binomial(link = "probit"),  data = data)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobittable6.html")
+```
+
+- CPIA does not seem to be significant 
+
+## Table 7: check on group of income: SKIP
+
+- devide data by group of income
+
+```{r}
+high_income = reg_data_mice %>% ungroup() %>% filter(GDP_percap_ppp > median(na.omit(GDP_percap_ppp))) %>% as.data.frame() %>% group_by(Country_Code, episode_count) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) %>%filter(Year == Start_Year) %>% select(Country_Code, episode_count,Year, Start_Year, End_Year, Total_distress, Debt_export_pc, Debt_service_export_pc, Real_GDP_growth, ROL, TOT_growth, Real_depreciation, CPIA, GDP_percap_ppp) %>% unique() %>% ungroup()
+low_income = reg_data_mice %>% ungroup() %>% filter(GDP_percap_ppp < median(na.omit(GDP_percap_ppp))) %>% as.data.frame() %>% group_by(Country_Code, episode_count) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) %>%filter(Year == Start_Year) %>% select(Country_Code, episode_count,Year, Start_Year, End_Year, Total_distress, Debt_export_pc, Debt_service_export_pc, Real_GDP_growth, ROL, TOT_growth, Real_depreciation, CPIA, GDP_percap_ppp) %>% unique() %>% ungroup()
+```
+
+- run regression on the whole data 
+
+```{r}
+data= data_main_startyear
+data_low = low_income
+data_high = high_income
+myprobit1 <- glm(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit4 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit5 <- glm(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+myprobit6 <- glm(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobittable7.html")
+```
+
+- check with CPIA 
+
+```{r}
+data= data_main_startyear
+data_low = low_income
+data_high = high_income
+myprobit1 <- glm(Total_distress ~ Debt_export_pc + CPIA + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc + CPIA + Real_GDP_growth + log(GDP_percap_ppp), family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  Debt_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit4 <- glm(Total_distress ~  Debt_service_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_low)
+myprobit5 <- glm(Total_distress ~  Debt_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+myprobit6 <- glm(Total_distress ~  Debt_service_export_pc + CPIA + Real_GDP_growth, family = binomial(link = "probit"),  data = data_high)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobittable7_CPIA.html")
+```
+
+- it does not really reflect the conclusion ofo Kraay, so simply take it for granted from Kraay.
+
+- check on marginal effect 
+
+```{r}
+library(mfx)
+data= data_main_startyear
+data_low = low_income
+data_high = high_income
+myprobit1 <- probitmfx(Total_distress ~ Debt_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp),   data = data)
+myprobit1
+myprobit2 <- probitmfx(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth + log(GDP_percap_ppp),   data = data)
+myprobit2
+myprobit3 <- probitmfx(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth,   data = data_low)
+myprobit3
+myprobit4 <- probitmfx(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth,   data = data_low)
+myprobit4
+myprobit5 <- probitmfx(Total_distress ~  Debt_export_pc + ROL + Real_GDP_growth,   data = data_high)
+myprobit5
+myprobit6 <- probitmfx(Total_distress ~  Debt_service_export_pc + ROL + Real_GDP_growth,   data = data_high)
+myprobit6
+myprobit7 <- probitmfx(Total_distress ~  Debt_service_export_pc + CPIA,   data = data_low)
+myprobit7
+```
+
+- it seems like for high income group, the financial factor is more important while for low income, policy and shocks are more important
+----------------------
+## run on the BRI countries
+
+- add code 
+
+> view(BRI)
+> BRI$Country_Code[BRI$Country_Name == "Cook Islands"] <- "COK"
+> BRI$Country_Code[BRI$Country_Name == "Micronesia"] <- "FSM"
+> view(code)
+> BRI$Country_Code[BRI$Country_Name == "Venezuela"] <- "VEN"
+> BRI$Country_Code[BRI$Country_Name == "Gambia"] <- "GMB"
+> BRI$Country_Code[BRI$Country_Name == "Congo, Rep."] <- "COG"
+> BRI$Country_Code[BRI$Country_Name == "South Sudan"] <- "SSD"
+> BRI$Country_Code[BRI$Country_Name == "Cote d'Ivoire"] <- "CIV"
+> BRI$Country_Code[BRI$Country_Name == "Niue"] <- "NIU"
+> BRI$Country_Code[BRI$Country_Name == "Bosnia and Herzegovina"] <- "BIH"
+> BRI$Country_Code[BRI$Country_Name == "Palestine"] <- "PSE"
+> BRI$Country_Code[BRI$Country_Name == "Bahrain"] <- "BHR"
+> BRI$Country_Code[BRI$Country_Name == "Yemen, Rep."] <- "YEM"
+> BRI$Country_Code[BRI$Country_Name == "Syria"] <- "SYR"
+> BRI$Country_Code[BRI$Country_Name == "Brunei"] <- "BRN"
+> BRI$Country_Code[BRI$Country_Name == "Timor-Leste"] <- "TLS"
+> BRI$Country_Code[BRI$Country_Name == "Iran"] <- "IRN"
+> BRI$Country_Code[BRI$Country_Name == "Laos"] <- "LAO"
+> BRI$Country_Code[BRI$Country_Name == "Serbia"] <- "SER"
+> BRI$Country_Code[BRI$Country_Name == "Slovakia"] <- "SVK"
+> BRI$Country_Code[BRI$Country_Name == "Republic of Korea"] <- "KOR"
+>saveRDS(BRI, "BRI")
+
+- run regression on BRI countries and get rsq for base model 
+
+# unconditional distress probability 
+
+```{r}
+thesis_start_year_BRI %>% filter(Total_distress == 1) %>% nrow()
+thesis_start_year_BRI %>% filter(Total_distress == 0) %>% nrow()
+thesis_start_year_BRI %>% filter(Total_distress == 1) %>% nrow() / nrow(thesis_start_year_BRI)
+```
+
+>data = thesis_data %>% filter(Country_Code %in% distress_event$Country_Code, Year %in% c(1970:2003)) %>% as.data.frame() %>% group_by(Country_Code, Total_distress, episode_group) %>% mutate(Start_Year = min(Year), End_Year = max(Year)) %>% filter(Year == Start_Year) %>% unique()
+>data %>% ungroup() %>% select(Total_distress, PV_debt_export, Debt_service_export_pc, ROL, Real_GDP_growth) -> data
+>data = thesis_start_year_BRI
+data %>% ungroup() %>% select(Year, Total_distress, PV_debt_export, Debt_service_export_pc, ROL, Real_GDP_growth) -> data
+# mice for data then do regression: mice(data, method = "pmm") -> imputed, complete(imputed, 5) -> completed_data
+
+```{r}
+data = thesis_data %>% filter(Year == Start_Year) %>% unique()
+myprobit1 <- glm(Total_distress ~ Debt_GNI_pc, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ Debt_GNI_pc + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ Debt_GNI_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ Debt_GNI_pc + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_BRI_all.html")
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 ) -> pseudo1
+export(pseudo1, "pseudo1.csv")
+```
+
+data = thesis_start_year_BRI
+myprobit1 <- glm(Total_distress ~ PV_debt_export, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress", dep.var.labels=c("Debt Distress"),
+covariate.labels=c("PV Debt/Exports","Total Debt Services/ Exports",
+"ROL Index","Real GDP growth"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "myprobit_BRI_all.html")
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8 ) -> pseudo1
+
+
+## extended model 
+
+#thesis_data %>% filter(Year == Start_Year) %>% unique()
+```{r}
+data = thesis_data %>% filter(Year == Start_Year) %>% unique()
+myprobit1 <- glm(Total_distress ~ PV_debt_export  + Region +Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc  + Region +Income_Group + Year_per_episode , family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL  + Region +Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth  + Region +Income_Group + Year_per_episode , family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth   + Region +Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth + Region +Income_Group + Year_per_episode , family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth + Region +Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth  + Region +Income_Group + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit9 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth  + Region + Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, myprobit9, dep.var.labels=c("Debt Distress"),
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_BRI_extended_addBRI.html")
+pR2(myprobit1) -> Rsq1
+pR2(myprobit2) -> Rsq2
+pR2(myprobit3) -> Rsq3
+pR2(myprobit4) -> Rsq4
+pR2(myprobit5) -> Rsq5
+pR2(myprobit6) -> Rsq6
+pR2(myprobit7) -> Rsq7
+pR2(myprobit8) -> Rsq8
+pR2(myprobit9) -> Rsq9
+data.frame(Rsq1,Rsq2, Rsq3,Rsq4,Rsq5,Rsq6,Rsq7,Rsq8, Rsq9 ) -> pseudo_extended
+export(pseudo_extended, "pseudo.csv")
+```
+--> like for the whole data, data for BRI also works better when using extended model
+--> when using region and income group variable, ROL not meaningful any more
+
+## test and train 
+-  divide years: 1970-2002, 2003-2018
+
+```{r}
+thesis_start_year_BRI$Region[thesis_start_year_BRI$Region == "Europe & Central Asia"] <- "Europe Central Asia"
+thesis_start_year_BRI$Region[thesis_start_year_BRI$Region == "Latin America & Caribbean"] <- "Latin America Caribbean"
+thesis_start_year_BRI$Region[thesis_start_year_BRI$Region == "Middle East & North Africa"] <- "Middle East North Africa"
+thesis_start_year_BRI$Region[thesis_start_year_BRI$Region == "East Asia & Pacific"] <- "East Asia Pacific"
+```
+
+
+- run regression on train set, get rsq and rate of accuracy
+# test on base model, done
+# test extended
+
+```{r}
+data = thesis_start_year_BRI %>% filter(Income_Group %in% c("Lower middle income", "Upper middle income"))
+train_set = data %>% filter(Year %in% c(1970:2002)) %>% ungroup() %>% unique()
+test_set = data %>% filter(Year %in% c(2003:2018))%>% ungroup() %>% unique()
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export  + Region  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc  + Region  + Year_per_episode , family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL  + Region  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth  + Region  + Year_per_episode , family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth   + Region  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth + Region  + Year_per_episode , family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth + Region  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth  + Region  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit9 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth  + Region + Year_per_episode, family = binomial(link = "probit"),  data = data)
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+predict(myprobit9, test_set, type = "response") -> fitted9
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+fitted9 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted9>uncond~1, TRUE ~0)) -> fitted9
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm9 = confusionMatrix(factor(fitted9$Total_Distress), factor(test_set$Total_distress), positive = "1")
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]), cm9 = c(Correct_Prediction =cm9$overall[1], cm9$byClass[1], 1-cm9$byClass[2]) ) -> base_train
+export(base_train, "base_train.csv")
+```
+>
+data = thesis_start_year_BRI %>% filter(Income_Group == "Upper middle income") %>% ungroup()
+  train_set = data %>% filter(Year %in% c(1970:2002)) %>% ungroup() %>% unique()
+test_set = data %>% filter(Year %in% c(2003:2018))%>% ungroup() %>% unique()
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export , family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc , family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+library(stargazer)
+library(caret)
+#stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+#omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_BRI_train_no_HI_2002.html")
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) ) -> base_train
+export(base_train, "base_train_UMI.csv")
+
+```{r}
+data = thesis_start_year_BRI %>% filter(Income_Group %in% c("Lower middle income", "Upper middle income")) %>% ungroup()
+  train_set = data %>% filter(Year %in% c(1970:2002)) %>% ungroup() %>% unique()
+test_set = data %>% filter(Year %in% c(2003:2018))%>% ungroup() %>% unique()
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export , family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc , family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+library(stargazer)
+library(caret)
+#stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+#omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_BRI_train_no_HI_2002.html")
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) ) -> base_train
+export(base_train, "base_train_LUMI.csv")
+```
+
+
+
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export , family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc , family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+library(stargazer)
+library(caret)
+stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_BRI_train_2002.html")
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) ) -> base_train
+export(base_train, "base_train.csv")
+
+```{r}
+data = thesis_start_year_BRI %>% filter(Income_Group == "Upper middle income") %>% ungroup()
+  train_set = data %>% filter(Year %in% c(1970:2002)) %>% ungroup() %>% unique()
+test_set = data %>% filter(Year %in% c(2003:2018))%>% ungroup() %>% unique()
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export , family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc , family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth , family = binomial(link = "probit"),  data = data)
+library(stargazer)
+library(caret)
+#stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+#omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_BRI_train_no_HI_2002.html")
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) ) -> base_train
+export(base_train, "base_train_UMI.csv")
+```
+
+- !Income_Group %in% c("High income", "Low income")
+# extended model
+# income group 
+ 
+```{r}
+data = thesis_data %>% filter(Year == Start_Year, Income_Group %in% c("Lower middle income", "Upper middle income"))
+  train_set = data %>% filter(Year %in% c(1970:2002)) %>% ungroup() %>% unique()
+test_set = data %>% filter(Year %in% c(2003:2018))%>% ungroup() %>% unique()
+data = train_set
+myprobit1 <- glm(Total_distress ~ PV_debt_export   + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit2 <- glm(Total_distress ~  Debt_service_export_pc    + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit3 <- glm(Total_distress ~  ROL   + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit4 <- glm(Total_distress ~  Real_GDP_growth+ Region   + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit7 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc + ROL + Real_GDP_growth  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit6 <- glm(Total_distress ~ Debt_service_export_pc + ROL + Real_GDP_growth  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit5 <- glm(Total_distress ~ PV_debt_export + ROL + Real_GDP_growth  + Year_per_episode, family = binomial(link = "probit"),  data = data)
+myprobit8 <- glm(Total_distress ~ PV_debt_export + Debt_service_export_pc +  Real_GDP_growth   + Year_per_episode, family = binomial(link = "probit"),  data = data)
+library(stargazer)
+#stargazer( myprobit1, myprobit2, myprobit3, myprobit4, myprobit5, myprobit6, myprobit7, myprobit8, title = "Determinants of Debt Distress",
+#omit.stat=c("LL","ser","f"), no.space=TRUE, align = TRUE, type = "html", out= "result_BRI_extended_train_2002.html")
+sum(train_set$Total_distress ==1)/nrow(train_set) -> uncond
+uncond
+predict(myprobit1, test_set, type = "response") -> fitted1
+predict(myprobit2, test_set, type = "response") -> fitted2
+predict(myprobit3, test_set, type = "response") -> fitted3
+predict(myprobit4, test_set, type = "response") -> fitted4
+predict(myprobit5, test_set, type = "response") -> fitted5
+predict(myprobit6, test_set, type = "response") -> fitted6
+predict(myprobit7, test_set, type = "response") -> fitted7
+predict(myprobit8, test_set, type = "response") -> fitted8
+fitted1 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted1>uncond~1, TRUE ~0)) -> fitted1
+fitted2 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted2>uncond~1, TRUE ~0)) -> fitted2
+fitted3 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted3>uncond~1, TRUE ~0)) -> fitted3
+fitted4 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted4>uncond~1, TRUE ~0)) -> fitted4
+fitted5 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted5>uncond~1, TRUE ~0)) -> fitted5
+fitted6 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted6>uncond~1, TRUE ~0)) -> fitted6
+fitted7 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted7>uncond~1, TRUE ~0)) -> fitted7
+fitted8 %>% as.data.frame() %>% mutate(Total_Distress = case_when(fitted8>uncond~1, TRUE ~0)) -> fitted8
+cm1 = confusionMatrix(factor(fitted1$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm2 = confusionMatrix(factor(fitted2$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm3 = confusionMatrix(factor(fitted3$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm4 = confusionMatrix(factor(fitted4$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm5 = confusionMatrix(factor(fitted5$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm6 = confusionMatrix(factor(fitted6$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm7 = confusionMatrix(factor(fitted7$Total_Distress), factor(test_set$Total_distress), positive = "1")
+cm8 = confusionMatrix(factor(fitted8$Total_Distress), factor(test_set$Total_distress), positive = "1")
+data.frame(cm1 = c( Correct_Prediction =cm1$overall[1], True_Distress = cm1$byClass[1], False_Alarms= 1-cm1$byClass[2]),cm2 = c(Correct_Prediction =cm2$overall[1], cm2$byClass[1], 1-cm2$byClass[2]), cm3 = c(Correct_Prediction =cm3$overall[1], cm3$byClass[1], 1-cm3$byClass[2]),cm4 = c(Correct_Prediction =cm4$overall[1], cm4$byClass[1], 1-cm4$byClass[2]),cm5 = c(Correct_Prediction =cm5$overall[1], cm5$byClass[1], 1-cm5$byClass[2]),cm6 = c(Correct_Prediction =cm6$overall[1], cm6$byClass[1], 1-cm6$byClass[2]), cm7 = c(Correct_Prediction =cm7$overall[1], cm7$byClass[1], 1-cm7$byClass[2]),cm8 = c(Correct_Prediction =cm8$overall[1], cm8$byClass[1], 1-cm8$byClass[2]) ) -> extended_train_highincome
+export(extended_train_highincome, "extended_train.csv")
+
+```
+ --> similar results as the whole data set for BRI countries, particularly high accuracy from probit 5, applied for each group of income
+ --> if applied for all income groups at the same time, the accuracy is lower, probit 8 is highest
+ --> if applied for only lower and upper income groups,probit8 still highest, overall accuracy is higher, but not as high as for only 1 group only
+ --> --> USE MODEL OF ALL VARIABLES FOR EACH GROUP OF INCOME 
+
+- examine the data set 
+
+```{r}
+thesis_start_year_BRI %>% ungroup() %>% select(Country_Code, Region) %>% group_by(Region) %>% ggplot(aes(Region)) + geom_bar()
+thesis_start_year_BRI %>% ungroup() %>% select(Country_Code, Income_Group) %>% group_by(Income_Group) %>% ggplot(aes(Income_Group)) + geom_bar()
+```
+
+- next to do: check on Chinese debt data 
+- now I have: data on Chinese debt from 2000-2014, 2005-2020, 2000-2017 -> use to research relationship between CN debt and debt distress
+- use debt 2018, 2019, 2020 to calculate PV debt to predict debt distress and debt threshold
+- next: check on the microdata and model to analyse the impact of CN debt on growth
+- CONSIDER: add number of years in distress into the regression as an explanatory variable
+
+## continue working with new data set: 09/8/2020
+## 10/8: work with Chinese data, project new BRI loans to debt as of end 2013, calculate PV debt for 2020, predict for the next 5 years
+
+## predict 
+
+#pnorm(coef6[1] + coef6[2]*x + coef6[3]*data$Debt_service_export_pc + coef6[4]*data$Real_GDP_growth + coef6[5]*ifelse(data$Income_Group== "Lower middle income", 1, 0)+ coef6[6]*ifelse(data$Income_Group== "Upper middle income", 1, 0) + coef6[7]*ifelse(data$Region== "Europe Central Asia", 1, 0) + coef6[8]*ifelse(data$Region== "Latin America Caribbean", 1, 0) +coef6[9]*ifelse(data$Region== "Middle East North Africa", 1,0) + coef6[10]*ifelse(data$Region== "South Asia", 1, 0) + coef6[11]*ifelse(data$Region== "Sub-Saharan Africa", 1, 0) + coef6[12]*data$Year_per_episode) == probability of distress (total distress)
+
+```{r}
+data = thesis_start_year_BRI %>% filter(Income_Group %in% c("Lower middle income", "Upper middle income")) %>% mutate(Year_per_distress_episode = ifelse(Total_distress == 1, Year_per_episode, 0))
+myprobit_2018 <- glm(Total_distress ~ PV_debt_export+ Debt_service_export_pc + Real_GDP_growth  + Region + Income_Group + Year_per_distress_episode, family = binomial(link = "probit"),  data = data)
+coef(myprobit_2018) -> coef6
+distress_natural
+thesis_data_BRI %>% filter(Year== 2018,Income_Group %in% c("Lower middle income", "Upper middle income")) %>% mutate(Year_per_distress_episode = ifelse(Total_distress == 1, Year_per_episode, 0)) %>% mutate(Debt_threshold = (qnorm(distress_natural) - coef6[1]  - coef6[3]*Debt_service_export_pc - coef6[4]*Real_GDP_growth - coef6[10]*ifelse(Income_Group== "Upper middle income", 1, 0) - coef6[5]*ifelse(Region== "Europe & Central Asia", 1, 0) - coef6[6]*ifelse(Region== "Latin America & Caribbean", 1, 0) -coef6[7]*ifelse(Region== "Middle East & North Africa", 1,0) - coef6[8]*ifelse(Region== "South Asia", 1, 0) - coef6[9]*ifelse(Region== "Sub-Saharan Africa", 1, 0) - coef6[11]*Year_per_distress_episode)/coef6[2]) %>% view()
+```
+
+# mfx for marginal effect coefficient 
+
+```{r}
+library(mfx)
+data = thesis_start_year_BRI %>% filter(Income_Group %in% c("Lower middle income", "Upper middle income")) 
+myprobit_2018 <- probitmfx(Total_distress ~ PV_debt_export+ Debt_service_export_pc + Real_GDP_growth + Region + Income_Group + Year_per_episode,  data = data)
+myprobit_2018$mfxest[,1] -> coef6 # marginal effect
+coef(myprobit_2018$fit)[1] -> intercept
+distress_natural
+thesis_data %>% filter(Year== 2018,Income_Group %in% c("Lower middle income", "Upper middle income"))  %>% mutate(Debt_threshold = (qnorm(0.01) - intercept  - coef6[2]*Debt_service_export_pc - coef6[3]*Real_GDP_growth/100 - coef6[9]*ifelse(Income_Group== "Upper middle income", 1, 0) - coef6[4]*ifelse(Region== "Europe & Central Asia", 1, 0) - coef6[5]*ifelse(Region== "Latin America & Caribbean", 1, 0) -coef6[6]*ifelse(Region== "Middle East & North Africa", 1,0) - coef6[7]*ifelse(Region== "South Asia", 1, 0) - coef6[8]*ifelse(Region== "Sub-Saharan Africa", 1, 0) - coef6[10]*Year_per_episode)/coef6[1]) -> debt_threshold_2018
+```
+
+```{r}
+summary(debt_threshold_2018$Debt_threshold)
+```
+
+```{r}
+data = readRDS("thesis_data") %>% filter(Country_Code == "PAK", Year == 2018)
+x = (qnorm(distress_natural) -intercept  - coef6[2]*data$Debt_service_export_pc - coef6[3]*data$Real_GDP_growth - coef6[9]*ifelse(data$Income_Group== "Upper middle income", 1, 0) - coef6[4]*ifelse(data$Region== "Europe & Central Asia", 1, 0) - coef6[5]*ifelse(data$Region== "Latin America & Caribbean", 1, 0) -coef6[6]*ifelse(data$Region== "Middle East & North Africa", 1,0) - coef6[7]*ifelse(data$Region== "South Asia", 1, 0) - coef6[8]*ifelse(data$Region== "Sub-Saharan Africa", 1, 0) - coef6[10]*data$Year_per_episode)/coef6[1]
+x
+pnorm(intercept + coef6[1]*x + coef6[2]*data$Debt_service_export_pc + coef6[3]*data$Real_GDP_growth + coef6[9]*ifelse(data$Income_Group== "Upper middle income", 1, 0) + coef6[4]*ifelse(data$Region== "Europe & Central Asia", 1, 0) + coef6[5]*ifelse(data$Region== "Latin America & Caribbean", 1, 0) +coef6[6]*ifelse(data$Region== "Middle East & North Africa", 1,0) + coef6[7]*ifelse(data$Region== "South Asia", 1, 0) + coef6[8]*ifelse(data$Region== "Sub-Saharan Africa", 1, 0) +coef6[10]*data$Year_per_episode)
+```
+
+```{r}
+left_join(kraay %>% select(Country_Code) %>% unique(), thesis_data %>% ungroup() %>% select(Country_Code, Income_Group) %>% unique()) %>% group_by(Income_Group) %>% count()
+```
+
+```{r}
+names(thesis_start_year_BRI)
+thesis_start_year_BRI %>%ungroup()%>% select(PV_debt_export, Debt_service_export_pc, ROL, Real_GDP_growth, Year_per_episode) %>% na.omit() -> to_cor
+cor(to_cor)
+```
+
+```{r}
+thesis_data %>% ungroup() %>% select(Country_Code, BRI) %>% unique() %>% group_by(BRI) %>% count()
+```
+
+# chinese investment tracker AEI
+# AEI_2020 <- readRDS("AEI_2020")
+```{r}
+summary(AEI_2020)
+summary(AEI_2020 %>% filter(BRI == 1))
+summary(AEI_2020 %>% filter(BRI != 1))
+sum(is.na(AEI_2020$BRI))
+AEI_2020$Country %>% unique() %>% view()
+AEI_2020 %>% filter(BRI == 1) %>% pull(Country) %>% unique() %>% view()
+```
+
+```{r}
+par(mfrow = c(1,1))
+boxplot(AEI_2020 %>% filter(BRI ==1) %>% pull(Share),AEI_2020$Share, AEI_2020 %>% filter(BRI ==0) %>% pull(Share), names = c("BRI", "All Countries", "Non-BRI"), boxwex = 0.1, notch = T, main = "China's shares in loans")
+boxplot(AEI_2020 %>% filter(BRI ==1) %>% pull(Million_USD),AEI_2020$Million_USD, AEI_2020 %>% filter(BRI ==0) %>% pull(Million_USD), names = c("BRI", "All Countries", "Non-BRI"), notch = T, main = "Size of Loans in Millions US Dollars")
+```
+
+
+```{r}
+AEI_2020 %>% group_by(Sector) %>% count(Sector) %>% arrange(desc(n))
+AEI_2020 %>% filter(BRI == 1) %>% group_by(Sector) %>% count(Sector) %>% arrange(desc(n)) 
+AEI_2020 %>% filter(BRI == 0) %>% group_by(Sector) %>% count(Sector) %>% arrange(desc(n))
+AEI_2020 %>% filter(!is.na(BRI)) %>% group_by(Sector) %>% ggplot(aes(Sector, fill = BRI)) + geom_bar(position = "dodge")+theme(axis.text.x = element_text(angle = 90, hjust = 1)) + xlab("") + ylab("Number of Projects")
+AEI_2020 %>% filter(!is.na(BRI)) %>% group_by(Sector) %>% ggplot(aes(Sector, Million_USD, fill = BRI)) + geom_bar(stat = "identity", position = "dodge")+theme(axis.text.x = element_text(angle = 90, hjust = 1)) + xlab("") + ylab("Total Investments in Millions US Dollars")
+```
+
+```{r}
+ AEI_2020 %>% filter(Sector %in% c("Energy", "Transport", "Metal"), BRI == 1) %>% nrow() / nrow(AEI_2020 %>% filter(BRI == 1))
+```
+
+```{r}
+AEI_2020 %>% filter(Sector %in% c("Energy"), BRI == 1) %>% nrow() / nrow(AEI_2020 %>% filter(BRI == 1))
+AEI_2020 %>% filter(Sector %in% c("Real estate"), BRI == 0) %>% nrow() / nrow(AEI_2020 %>% filter(BRI == 0))
+```
+
+```{r}
+AEI_2002$Sector %>% unique()
+```
+
+```{r}
+AEI_2020 %>% filter(BRI == 1) %>% group_by(Sector) %>% summarise(Investment = sum(Million_USD)) %>% arrange(desc(Investment)) %>% as.data.frame() -> investment
+sum(investment$Investment[1:4])/sum(investment$Investment)
+AEI_2020 %>% filter(Sector == "Technology") %>% summarise(Investment = sum(Million_USD)) -> investment
+AEI_2020 %>% summarise(Investment = sum(Million_USD)) -> total_BRI
+investment/total_BRI
+```
+
+> AEI_2020 %>% filter(!is.na(BRI))%>% mutate(Investment_share = Million_USD/sum(Million_USD)) %>% select(BRI, Investment_share) %>% group_by(BRI) %>% mutate(Investment_share = sum(Investment_share)) %>% unique()
+# A tibble: 2 x 2
+# Groups:   BRI [2]
+  BRI   Investment_share
+  <chr>            <dbl>
+1 0                0.627
+2 1                0.373
+## Aid data 
+
+```{r}
+summary(Aid %>% filter(Sector != "Energy Generation and Supply"))
+summary(Aid %>% filter(Sector == "Energy Generation and Supply"))
+par(mfrow = c(2,2))
+boxplot(Aid %>% filter(Sector == "Energy Generation and Supply") %>% pull(Interest), Aid$Interest, Aid %>% filter(Sector != "Energy Generation and Supply") %>% pull(Interest), boxwex = 0.1, names = c("Energy", "All Projects", "Non-Energy"), main = "Interest Rate")
+boxplot(Aid %>% filter(Sector == "Energy Generation and Supply") %>% pull(Grace), Aid$Grace, Aid %>% filter(Sector != "Energy Generation and Supply") %>% pull(Grace), boxwex = 0.1, names = c("Energy", "All Projects", "Non-Energy"), main = "Grace Period")
+boxplot(Aid %>% filter(Sector == "Energy Generation and Supply") %>% pull(Grant_element), Aid$Grant_element, Aid %>% filter(Sector != "Energy Generation and Supply") %>% pull(Grant_element), boxwex = 0.1, names = c("Energy", "All Projects", "Non-Energy"), main = "Grant Elements")
+boxplot(Aid %>% filter(Sector == "Energy Generation and Supply") %>% pull(Maturity), Aid$Maturity, Aid %>% filter(Sector != "Energy Generation and Supply") %>% pull(Maturity), boxwex = 0.1, names = c("Energy", "All Projects", "Non-Energy"), main = "Maturity")
+```
+
+```{r}
+Aid %>% group_by(Purpose) %>% count(Purpose) %>% arrange(desc(n))
+Aid %>% group_by(Loan_type) %>% count(Loan_type) %>% arrange(desc(n))
+Aid %>% group_by(Grace) %>% count(Grace) %>% arrange(desc(n))
+Aid %>% as.data.frame() %>% ggplot(aes(x = reorder(as.factor(Loan_type), -amount_usd_current), amount_usd_current)) + geom_bar(stat = "identity")
+
+```
+
+
+
+```{r}
+Aid %>% filter(!is.na(amount_usd_current)) %>% group_by(Purpose) %>% summarise(Investment = sum(amount_usd_current)) %>% arrange(desc(Investment)) %>% as.data.frame() -> investment
+investment
+```
+
+```{r}
+Aid %>% filter(!is.na(amount_usd_current)) %>% group_by(Interest) %>% summarise(Investment = sum(amount_usd_current)) %>% arrange(desc(Investment)) -> investment
+investment
+sum(Aid %>% filter(Interest >2,!is.na(amount_usd_current)) %>% pull(amount_usd_current)) / sum(Aid %>% filter(!is.na(Interest), !is.na(amount_usd_current)) %>%  pull(amount_usd_current))
+```
+
+```{r}
+summary(AEI_2020)
+```
+
+# data file hrt: 2000-2017
+
+```{r}
+summary(hrt)
+```
+
+```{r}
+sum(hrt$CN_debt_USD) -> total_CN_investment
+hrt %>% group_by(Country_Code) %>% mutate(share = sum(CN_debt_USD)/total_CN_investment) %>% select(-c(Year, CN_debt_USD, CN_debt_gdp)) %>% unique() %>% ungroup() -> share
+share %>% arrange(desc(share))
+```
+
+```{r}
+sum(hrt$CN_debt_USD) -> total_CN_investment
+hrt %>% group_by(Income_Group) %>% mutate(share = sum(CN_debt_USD)/total_CN_investment) %>% ungroup() %>% select(-c(Country_Code, Year, CN_debt_USD, CN_debt_gdp)) %>% unique() %>% ungroup() -> share
+share %>% arrange(desc(share))
+hrt %>% group_by(Income_Group) %>% ggplot(aes(Income_Group)) + geom_bar() + xlab("") + ylab("Number of Countries")
+
+```
+
+```{r}
+thesis_data %>% group_by(Income_Group) %>% count(Income_Group) %>% arrange(desc(n))
+thesis_start_year_BRI %>% group_by(Income_Group) %>% count(Income_Group) %>% arrange(desc(n))
+```
+
